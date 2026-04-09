@@ -1,0 +1,307 @@
+{% extends "base.html" %}
+{% set active = "dashboard" %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">📊 Gestão de Planos &amp; Análise</h1>
+</div>
+
+<!-- Cards -->
+<div class="cards-row">
+  <div class="card"><div class="card-label">Total de Alunos</div><div class="card-value" id="c-total">—</div></div>
+  <div class="card"><div class="card-label">Planos Ativos</div><div class="card-value" id="c-ativos">—</div></div>
+  <div class="card"><div class="card-label">Renovações Pendentes</div><div class="card-value" id="c-pend">—</div></div>
+  <div class="card"><div class="card-label">Evasão (Churn)</div><div class="card-value" id="c-churn">—</div></div>
+</div>
+
+<!-- Área central -->
+<div class="mid-area">
+  <div class="table-panel">
+    <div class="table-toolbar">
+      <input type="text" id="filtro" class="search-input" placeholder="🔍  Filtrar por Nome ou CPF" oninput="filtrarAlunos()"/>
+    </div>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Aluno</th>
+            <th>Plano</th>
+            <th>Status Aluno</th>
+            <th>Status Plano</th>
+            <th>Vencimento</th>
+            <th style="text-align:center">Ações</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="chart-panel">
+    <div class="chart-title">Matrículas por Mês</div>
+    <canvas id="chart" width="240" height="200"></canvas>
+  </div>
+</div>
+
+<div class="export-bar">
+  <button class="btn btn-primary" onclick="location.href='/api/exportar/csv'">⬇ Exportar CSV</button>
+  <button class="btn btn-secondary" onclick="location.href='/api/exportar/excel'">⬇ Exportar Excel</button>
+</div>
+
+<!-- ══ MODAL EDITAR ══ -->
+<div class="modal-overlay" id="modal-editar" style="display:none">
+  <div class="modal-box modal-large">
+    <div class="modal-header">
+      <h3>✏️ Editar Aluno</h3>
+      <button class="modal-close" onclick="fecharEditar()">✕</button>
+    </div>
+    <div id="alert-editar" class="alert" style="display:none"></div>
+    <div class="form-grid">
+      <input type="hidden" id="edit-id"/>
+      <div class="form-group span2">
+        <label>Nome Completo *</label>
+        <input type="text" id="edit-nome"/>
+      </div>
+      <div class="form-group">
+        <label>E-mail *</label>
+        <input type="email" id="edit-email"/>
+      </div>
+      <div class="form-group">
+        <label>CPF *</label>
+        <input type="text" id="edit-cpf" maxlength="14" oninput="maskCPF(this)"/>
+      </div>
+      <div class="form-group">
+        <label>Plano</label>
+        <select id="edit-plano">
+          <option value="Teste 1 Dia">Teste 1 Dia — Grátis</option>
+          <option value="Teste 1 Semana">Teste 1 Semana — Grátis</option>
+          <option value="Mensal">Mensal — R$ 89,90</option>
+          <option value="Bimestral">Bimestral — R$ 159,90</option>
+          <option value="Semestral">Semestral — R$ 399,90</option>
+          <option value="Anual">Anual — R$ 699,90</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Telefone</label>
+        <input type="text" id="edit-telefone"/>
+      </div>
+      <div class="form-group">
+        <label>Data de Nascimento</label>
+        <input type="date" id="edit-nascimento"/>
+      </div>
+      <div class="form-group">
+        <label>Gênero</label>
+        <div class="radio-group">
+          <label class="radio-label"><input type="radio" name="edit-genero" value="Feminino"/> Feminino</label>
+          <label class="radio-label"><input type="radio" name="edit-genero" value="Masculino"/> Masculino</label>
+          <label class="radio-label"><input type="radio" name="edit-genero" value="Outro"/> Outro</label>
+        </div>
+      </div>
+    </div>
+    <div class="modal-btns">
+      <button class="btn btn-primary" onclick="salvarEdicao()">✔ Salvar Alterações</button>
+      <button class="btn btn-secondary" onclick="fecharEditar()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MODAL DESATIVAR ══ -->
+<div class="modal-overlay" id="modal-desativar" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3>🗑 Desativar Aluno</h3>
+      <button class="modal-close" onclick="fecharDesativar()">✕</button>
+    </div>
+    <p style="color:#6B7280;margin:12px 0 20px">Tem certeza? O aluno será desativado mas o histórico será mantido.</p>
+    <div class="modal-btns">
+      <button class="btn btn-danger" id="btn-confirm-desativar">Confirmar</button>
+      <button class="btn btn-secondary" onclick="fecharDesativar()">Cancelar</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  let _pendDesativar = null;
+
+  // ── Métricas ──────────────────────────────────────────────────
+  async function carregarMetricas() {
+    const m = await fetch("/api/metricas").then(r => r.json());
+    document.getElementById("c-total").textContent  = m.total_alunos;
+    document.getElementById("c-ativos").textContent = m.planos_ativos;
+    document.getElementById("c-pend").textContent   = m.renovacoes_pendentes;
+    document.getElementById("c-churn").textContent  = m.churn + "%";
+  }
+
+  // ── Tabela ────────────────────────────────────────────────────
+  async function carregarAlunos(q) {
+    q = q || "";
+    const rows = await fetch("/api/alunos?q=" + encodeURIComponent(q)).then(r => r.json());
+    const tbody = document.getElementById("tbody");
+    tbody.innerHTML = "";
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="6" class="empty-row">Nenhum aluno encontrado</td></tr>';
+      return;
+    }
+    rows.forEach(function(r) {
+      const aAtivo  = r.status === "Ativo";
+      const pAtivo  = r.status_plano === "Ativo";
+      const pSusp   = r.status_plano === "Suspenso";
+
+      var badgeAluno = "<span class='badge " + (aAtivo ? "badge-ativo" : "badge-inativo") + "'>" + r.status + "</span>";
+
+      var badgePlano;
+      if (pAtivo) {
+        badgePlano = "<span class='badge badge-ativo'>Ativo</span>";
+      } else if (pSusp) {
+        badgePlano = "<span class='badge badge-suspenso'>Suspenso</span>";
+      } else {
+        badgePlano = "<span class='badge badge-inativo'>" + (r.status_plano || "—") + "</span>";
+      }
+
+      var btnToggle = r.id_plano
+        ? "<button class='btn-toggle " + (pAtivo ? "toggle-ativo" : "toggle-inativo") + "' title='" +
+          (pAtivo ? "Suspender plano" : "Ativar plano") +
+          "' onclick='togglePlano(" + r.id_plano + ")'>" +
+          (pAtivo ? "⏸ Suspender" : "▶ Ativar") + "</button>"
+        : "";
+
+      var tr = document.createElement("tr");
+      tr.innerHTML =
+        "<td><strong>" + r.nome_completo + "</strong></td>" +
+        "<td>" + (r.tipo_plano || "—") + "</td>" +
+        "<td>" + badgeAluno + "</td>" +
+        "<td>" + badgePlano + " " + btnToggle + "</td>" +
+        "<td>" + (r.data_fim || "—") + "</td>" +
+        "<td style='text-align:center'>" +
+          "<button class='btn-icon' title='Editar' onclick='abrirEditar(" + r.id_aluno + ")'>✏️</button> " +
+          "<button class='btn-icon' title='Desativar' onclick='abrirDesativar(" + r.id_aluno + ")'>🗑</button>" +
+        "</td>";
+      tbody.appendChild(tr);
+    });
+  }
+
+  function filtrarAlunos() {
+    carregarAlunos(document.getElementById("filtro").value);
+  }
+
+  // ── Toggle status plano ───────────────────────────────────────
+  async function togglePlano(id_plano) {
+    const res  = await fetch("/api/plano/toggle/" + id_plano, { method: "POST" });
+    const data = await res.json();
+    if (data.ok) {
+      carregarAlunos(document.getElementById("filtro").value);
+      carregarMetricas();
+    }
+  }
+
+  // ── Gráfico ───────────────────────────────────────────────────
+  async function carregarGrafico() {
+    const data = await fetch("/api/grafico").then(r => r.json());
+    const canvas = document.getElementById("chart");
+    const ctx = canvas.getContext("2d");
+    const labels = data.map(function(d) { return d.mes; });
+    const vals   = data.map(function(d) { return d.total; });
+    const max    = Math.max.apply(null, vals.concat([1]));
+    const W = canvas.width, H = canvas.height;
+    const padL=30, padB=28, padT=12, padR=8;
+    const cW = W-padL-padR, cH = H-padB-padT;
+    ctx.clearRect(0, 0, W, H);
+    const barW = Math.max(6, Math.floor(cW / Math.max(vals.length,1)) - 5);
+    vals.forEach(function(v, i) {
+      const bh = Math.round(v / max * cH);
+      const x  = padL + i * (cW / vals.length);
+      ctx.fillStyle = "#1E3A5F";
+      ctx.fillRect(x, padT+cH-bh, barW, bh);
+      ctx.fillStyle = "#9CA3AF";
+      ctx.font = "8px Inter";
+      ctx.textAlign = "center";
+      ctx.fillText(labels[i], x + barW/2, H-padB+12);
+      if (v > 0) {
+        ctx.fillStyle = "#1E3A5F";
+        ctx.fillText(v, x + barW/2, padT+cH-bh-4);
+      }
+    });
+    ctx.strokeStyle = "#E5E7EB";
+    ctx.beginPath(); ctx.moveTo(padL, padT+cH); ctx.lineTo(W-padR, padT+cH); ctx.stroke();
+  }
+
+  // ── Modal Editar ──────────────────────────────────────────────
+  async function abrirEditar(id) {
+    const a = await fetch("/api/aluno/" + id).then(r => r.json());
+    document.getElementById("edit-id").value         = a.id_aluno;
+    document.getElementById("edit-nome").value       = a.nome_completo || "";
+    document.getElementById("edit-email").value      = a.email || "";
+    document.getElementById("edit-telefone").value   = a.telefone || "";
+    document.getElementById("edit-nascimento").value = a.data_nascimento || "";
+    document.getElementById("edit-plano").value      = a.tipo_plano || "Mensal";
+    var cpf = (a.cpf || "").replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
+    document.getElementById("edit-cpf").value = cpf;
+    var gen = a.genero || "Outro";
+    var radio = document.querySelector("input[name='edit-genero'][value='" + gen + "']");
+    if (radio) radio.checked = true;
+    document.getElementById("alert-editar").style.display = "none";
+    document.getElementById("modal-editar").style.display = "flex";
+  }
+
+  function fecharEditar() { document.getElementById("modal-editar").style.display = "none"; }
+
+  async function salvarEdicao() {
+    var id       = document.getElementById("edit-id").value;
+    var nome     = document.getElementById("edit-nome").value.trim();
+    var email    = document.getElementById("edit-email").value.trim();
+    var cpf      = document.getElementById("edit-cpf").value.trim();
+    var plano    = document.getElementById("edit-plano").value;
+    var telefone = document.getElementById("edit-telefone").value.trim();
+    var nasc     = document.getElementById("edit-nascimento").value;
+    var genEl    = document.querySelector("input[name='edit-genero']:checked");
+    var genero   = genEl ? genEl.value : "Outro";
+    if (!nome || !email || !cpf) { mostrarAlertEditar("Preencha Nome, E-mail e CPF.", "error"); return; }
+    var res  = await fetch("/api/editar/" + id, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ nome:nome, email:email, cpf:cpf, plano:plano, telefone:telefone, nascimento:nasc, genero:genero })
+    });
+    var data = await res.json();
+    if (data.ok) { fecharEditar(); carregarAlunos(document.getElementById("filtro").value); carregarMetricas(); }
+    else mostrarAlertEditar(data.msg, "error");
+  }
+
+  function mostrarAlertEditar(msg, tipo) {
+    var el = document.getElementById("alert-editar");
+    el.textContent = msg; el.className = "alert alert-" + tipo; el.style.display = "block";
+  }
+
+  // ── Modal Desativar ───────────────────────────────────────────
+  function abrirDesativar(id) {
+    _pendDesativar = id;
+    document.getElementById("modal-desativar").style.display = "flex";
+    document.getElementById("btn-confirm-desativar").onclick = async function() {
+      await fetch("/api/desativar/" + _pendDesativar, { method: "POST" });
+      fecharDesativar(); carregarAlunos(); carregarMetricas();
+    };
+  }
+
+  function fecharDesativar() {
+    document.getElementById("modal-desativar").style.display = "none";
+    _pendDesativar = null;
+  }
+
+  // Fecha modal clicando fora
+  document.addEventListener("click", function(e) {
+    if (e.target.classList.contains("modal-overlay")) { fecharEditar(); fecharDesativar(); }
+  });
+
+  function maskCPF(el) {
+    var v = el.value.replace(/\D/g,"").slice(0,11);
+    v = v.replace(/(\d{3})(\d)/,"$1.$2");
+    v = v.replace(/(\d{3})\.(\d{3})(\d)/,"$1.$2.$3");
+    v = v.replace(/(\d{3})\.(\d{3})\.(\d{3})(\d)/,"$1.$2.$3-$4");
+    el.value = v;
+  }
+
+  carregarMetricas();
+  carregarAlunos();
+  carregarGrafico();
+</script>
+{% endblock %}
