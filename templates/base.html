@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>SG Academia</title>
+  <link rel="stylesheet" href="/static/css/style.css"/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+</head>
+<body class="sidebar-open">
+
+  <!-- Sidebar -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-logo">
+      <span class="logo-icon">🏋️</span>
+      <span class="logo-text">SG Academia</span>
+    </div>
+    <nav class="sidebar-nav">
+      <a href="/" class="nav-item {% if active=='dashboard' %}active{% endif %}">
+        <span class="nav-icon">📊</span>
+        <span class="nav-label">Dashboard</span>
+      </a>
+      <a href="/cadastro" class="nav-item {% if active=='cadastro' %}active{% endif %}">
+        <span class="nav-icon">👤</span>
+        <span class="nav-label">Cadastrar Aluno</span>
+      </a>
+    </nav>
+  </aside>
+
+  <!-- Overlay escuro no mobile -->
+  <div class="sidebar-overlay" id="sidebar-overlay" onclick="fecharSidebar()"></div>
+
+  <!-- Main -->
+  <div class="main-wrap" id="main-wrap">
+    <header class="topbar">
+      <button class="menu-btn" id="menu-btn" onclick="toggleSidebar()" title="Menu">
+        <span class="hamburger"></span>
+        <span class="hamburger"></span>
+        <span class="hamburger"></span>
+      </button>
+      <span class="topbar-title">SG Academia</span>
+      <span class="topbar-right">👤</span>
+    </header>
+    <main class="content">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+
+  <script>
+    function toggleSidebar() {
+      const body = document.body;
+      if (body.classList.contains("sidebar-open")) {
+        body.classList.remove("sidebar-open");
+        body.classList.add("sidebar-closed");
+      } else {
+        body.classList.remove("sidebar-closed");
+        body.classList.add("sidebar-open");
+      }
+    }
+    function fecharSidebar() {
+      document.body.classList.remove("sidebar-open");
+      document.body.classList.add("sidebar-closed");
+    }
+    // Começa fechada em telas pequenas
+    if (window.innerWidth < 768) {
+      document.body.classList.remove("sidebar-open");
+      document.body.classList.add("sidebar-closed");
+    }
+  </script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>
