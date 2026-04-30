@@ -5,6 +5,7 @@ import services
 import os
 
 app = Flask(__name__)
+inicializar_banco()
 CORS(app)  # Permite requisições de qualquer origem (frontend separado ou hospedagem externa)
 
 
